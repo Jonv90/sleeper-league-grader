@@ -18,7 +18,6 @@ def fetch_all_data():
     
     user_map = {u['user_id']: (u.get('metadata', {}).get('team_name') or u.get('display_name')) for u in users}
     
-    # NEW: Create a set of all rostered player IDs
     rostered_ids = set()
     for r in rosters:
         rostered_ids.update(r['players'] or [])
@@ -29,32 +28,54 @@ def fetch_all_data():
 st.title("🏈 League of Extraordinarily Mental Men")
 players, rosters, projections, week, user_map, rostered_ids = fetch_all_data()
 
-# ADD THE TIMESTAMP
+# TIMESTAMP
 now = datetime.now().strftime("%B %d, %I:%M %p")
 st.caption(f"Last Updated: {now} (Projections Refresh on Page Load)")
 
-# SIDEBAR: Add "FREE AGENTS" to the list
+# --- SIDEBAR UPDATED ---
 team_names = [user_map.get(r['owner_id'], f"Team {r['roster_id']}") for r in rosters]
-selection = st.sidebar.selectbox("Select View", ["FREE AGENTS"] + team_names)
+# Added "🔥 HOT OR NOT" to the list
+selection = st.sidebar.selectbox("Select View", ["FREE AGENTS", "🔥 HOT OR NOT"] + team_names)
+
+# NEW: REFRESH BUTTON AT BOTTOM OF SIDEBAR
+with st.sidebar:
+    st.divider()
+    if st.button("🔄 Refresh Data"):
+        st.cache_data.clear()
+        st.rerun()
 
 # DATA PROCESSING
 table_data = []
 
-if selection == "FREE AGENTS":
+# --- NEW SECTION: HOT OR NOT ---
+if selection == "🔥 HOT OR NOT":
+    st.header("🔥 Hot or Not ❄️")
+    st.info(f"Analysis for NFL Week {week}")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("🔥 Trending Up")
+        st.success("**Player A**\n\nProjected: 22.4 (+5.2 vs Avg)")
+        st.success("**Player B**\n\nProjected: 19.8 (+4.1 vs Avg)")
+    with col2:
+        st.subheader("❄️ Trending Down")
+        st.error("**Player C**\n\nProjected: 11.2 (-6.5 vs Avg)")
+        st.error("**Player D**\n\nProjected: 9.8 (-5.1 vs Avg)")
+
+elif selection == "FREE AGENTS":
     st.subheader("🔥 Best Available Free Agents")
     
     # 1. Expand the tabs to include DEF and K
     tab_qb, tab_rb, tab_wr, tab_te, tab_k, tab_def = st.tabs(["QB", "RB", "WR", "TE", "K", "DEF"])
     
-    # 2. Gather FA data (including K and DEF)
+    # 2. Gather FA data
     fa_list = []
     for p_id, p_info in players.items():
         if p_id not in rostered_ids:
             pos = p_info.get('position')
-            # Check for all target positions
             if pos in ['QB', 'RB', 'WR', 'TE', 'K', 'DEF']:
                 proj = projections.get(p_id, {}).get('pts_ppr', 0)
-                if proj > 0.5: # Lowered threshold slightly for kickers/defense
+                if proj > 0.5:
                     fa_list.append({
                         "Position": pos,
                         "Player": p_info.get('full_name') or f"{p_info.get('team')} DEF",
@@ -64,7 +85,6 @@ if selection == "FREE AGENTS":
     
     df_fa = pd.DataFrame(fa_list)
 
-    # 3. Helper to display (using the function from before)
     def display_pos_table(df, pos):
         pos_df = df[df['Position'] == pos].sort_values(by="Grade", ascending=False).head(15)
         if not pos_df.empty:
@@ -72,7 +92,6 @@ if selection == "FREE AGENTS":
         else:
             st.write(f"No {pos}s available.")
 
-    # 4. Map data to the new tabs
     with tab_qb: display_pos_table(df_fa, "QB")
     with tab_rb: display_pos_table(df_fa, "RB")
     with tab_wr: display_pos_table(df_fa, "WR")
@@ -94,9 +113,7 @@ else:
             "Grade": min(round((proj / 25) * 100), 100)
         })
 
-# DISPLAY TABLE
-df = pd.DataFrame(table_data)
-if not df.empty:
-    st.table(df.sort_values(by="Grade", ascending=False).head(45) if selection == "FREE AGENTS" else df.sort_values(by="Grade", ascending=False))
-else:
-    st.write("No players found.")
+    # Only display this table if we are in a team view
+    df = pd.DataFrame(table_data)
+    if not df.empty:
+        st.table(df.sort_values(by="Grade", ascending=False))
