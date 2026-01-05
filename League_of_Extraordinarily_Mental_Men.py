@@ -2,94 +2,86 @@ import streamlit as st
 import requests
 import pandas as pd
 
-# CONFIG
+# --- SETTINGS ---
 LEAGUE_ID = "1239058549716303872"
-st.set_page_config(page_title="Premier Draft & Keeper Analytics", page_icon="🎯", layout="wide")
+st.set_page_config(page_title="League of Extraordinarily Mental Men", page_icon="🏈", layout="wide")
 
-@st.cache_data(ttl=300)
-def fetch_draft_data():
-    # 1. Get the Draft ID for the league
-    league_info = requests.get(f"https://api.sleeper.app/v1/league/{LEAGUE_ID}").json()
-    draft_id = league_info.get('draft_id')
-    
-    # 2. Fetch Draft Picks & Players
-    picks = requests.get(f"https://api.sleeper.app/v1/draft/{draft_id}/picks").json()
+def get_letter_grade(points, pos):
+    ceilings = {'QB': 24, 'RB': 18, 'WR': 18, 'TE': 14, 'K': 10, 'DEF': 10}
+    ceiling = ceilings.get(pos, 15)
+    pct = (points / ceiling) * 100
+    if pct >= 90: return "A+"
+    elif pct >= 80: return "A"
+    elif pct >= 70: return "B"
+    elif pct >= 60: return "C"
+    elif pct >= 50: return "D"
+    return "F"
+
+@st.cache_data(ttl=60)
+def fetch_league_data(selected_week):
     players = requests.get("https://api.sleeper.app/v1/players/nfl").json()
+    rosters = requests.get(f"https://api.sleeper.app/v1/league/{LEAGUE_ID}/rosters").json()
     users = requests.get(f"https://api.sleeper.app/v1/league/{LEAGUE_ID}/users").json()
+    proj = requests.get(f"https://api.sleeper.app/v1/stats/nfl/regular/2025/{selected_week}").json()
+    actual = requests.get(f"https://api.sleeper.app/v1/stats/nfl/regular/2025/{selected_week}").json()
     
-    user_map = {u['user_id']: u.get('metadata', {}).get('team_name') or u.get('display_name') for u in users}
-    return picks, players, user_map, draft_id
-
-picks, players, user_map, draft_id = fetch_draft_data()
-
-# --- APP NAVIGATION ---
-st.sidebar.title("Draft Command Center")
-mode = st.sidebar.selectbox("Select Mode", ["📦 KEEPER VALUATION", "🏁 LIVE DRAFT GRADER", "📊 ROSTER ANALYSIS"])
-
-if mode == "📦 KEEPER VALUATION":
-    st.header("💎 Keeper Value Ratings")
-    st.info("Calculating value based on Pick Cost vs. Projected Performance.")
+    user_map = {u['user_id']: {"name": u.get('metadata', {}).get('team_name') or u.get('display_name'), "avatar": u.get('avatar')} for u in users}
+    roster_to_name = {r['roster_id']: user_map.get(r['owner_id'], {}).get('name', 'Unknown') for r in rosters}
+    rostered_ids = {p for r in rosters if r['players'] for p in r['players']}
     
-    keeper_data = []
-    # Sleeper flags keepers in the picks metadata
-    for p in picks:
-        if p.get('metadata', {}).get('is_keeper') == '1':
-            p_info = players.get(p['player_id'], {})
-            name = p_info.get('full_name', 'Unknown Player')
-            pos = p_info.get('position', '??')
-            pick_num = p['pick_no']
-            round_num = p['round']
-            
-            # Simple Value Logic: Early round keepers are harder to find 'value' in
-            # If a top-20 player is kept in Round 5+, that's a steal.
-            value_score = "🔥 ELITE" if round_num > 6 and pick_num < 50 else "✅ SOLID"
-            if round_num > 10: value_score = "💎 INSANE VALUE"
-            
-            keeper_data.append({
-                "Team": user_map.get(p['picked_by'], "Unknown"),
-                "Player": name,
-                "Pos": pos,
-                "Round Cost": round_num,
-                "Overall Pick": pick_num,
-                "Value Grade": value_score
-            })
-    
-    if keeper_data:
-        df_keepers = pd.DataFrame(keeper_data).sort_values(by="Overall Pick")
-        st.table(df_keepers)
-    else:
-        st.warning("No keepers identified in this draft ID yet.")
+    return players, rosters, proj, actual, user_map, rostered_ids, roster_to_name
 
-elif mode == "🏁 LIVE DRAFT GRADER":
-    st.header("Draft Board Analysis")
-    
-    if not picks:
-        st.subheader("Draft hasn't started yet! Waiting for picks...")
-    else:
-        # Calculate Team GPA based on 'Steals' vs 'Reaches'
-        # A 'Steal' is anyone drafted 12+ picks after their ADP (Simplified here)
-        st.subheader("Recent Pick Analysis")
-        recent_picks = []
-        for p in picks[-10:]: # Show last 10 picks
-            p_info = players.get(p['player_id'], {})
-            recent_picks.append({
-                "Pick": p['pick_no'],
-                "Team": user_map.get(p['picked_by'], "Unknown"),
-                "Player": p_info.get('full_name'),
-                "Pos": p_info.get('position')
-            })
-        st.write(pd.DataFrame(recent_picks))
+# --- SIDEBAR ---
+state = requests.get("https://api.sleeper.app/v1/state/nfl").json()
+view_week = st.sidebar.slider("NFL Week", 1, 18, value=state['week'])
+players, rosters, projections, actual_stats, user_map, rostered_ids, roster_to_name = fetch_league_data(view_week)
 
-elif mode == "📊 ROSTER ANALYSIS":
-    st.header("Post-Draft Roster Strength")
-    # Group picks by user to see full rosters
-    rosters = {}
-    for p in picks:
-        uid = p['picked_by']
-        if uid not in rosters: rosters[uid] = []
-        p_info = players.get(p['player_id'], {})
-        rosters[uid].append(f"{p_info.get('full_name')} ({p_info.get('position')})")
+selection = st.sidebar.selectbox("Navigation", ["🔥 BOOM & CHOKE", "FREE AGENTS"] + sorted([u['name'] for u in user_map.values()]))
+
+# --- MAIN CONTENT ---
+st.title("🏈 Mental Men: Premier Analytics")
+
+if selection == "🔥 BOOM & CHOKE":
+    st.header(f"Live Performance Tracker - Week {view_week}")
+    boom_list = []
+    for r in rosters:
+        owner = roster_to_name[r['roster_id']]
+        for pid in (r['players'] or []):
+            p = players.get(pid, {})
+            p_name = p.get('full_name') or f"{p.get('team', 'UNK')} DEF"
+            act = actual_stats.get(pid, {}).get('pts_ppr', 0)
+            proj = projections.get(pid, {}).get('pts_ppr', 0)
+            diff = act - proj
+            if proj > 4:
+                status = "🔥 BOOMING" if diff > 7 else "❄️ CHOKING" if diff < -7 else "⚪ NORMAL"
+                boom_list.append({"Player": p_name, "Team": owner, "Score": act, "Proj": proj, "Gap": round(diff, 1), "Status": status})
     
-    for uid, team_list in rosters.items():
-        with st.expander(f"Team: {user_map.get(uid, 'Unknown')}"):
-            st.write(", ".join(team_list))
+    df_boom = pd.DataFrame(boom_list).sort_values(by="Gap", ascending=False)
+    st.table(df_boom)
+
+elif selection == "FREE AGENTS":
+    st.header("Best Available Players")
+    tabs = st.tabs(["QB", "RB", "WR", "TE", "K", "DEF"])
+    fa_list = [{"Pos": p.get('position'), "Player": p.get('full_name') or f"{p.get('team')} DEF", "Points": actual_stats.get(pid, {}).get('pts_ppr', 0)} 
+               for pid, p in players.items() if pid not in rostered_ids and p.get('position') in ['QB', 'RB', 'WR', 'TE', 'K', 'DEF']]
+    df_fa = pd.DataFrame(fa_list)
+    for i, pos in enumerate(["QB", "RB", "WR", "TE", "K", "DEF"]):
+        with tabs[i]:
+            st.table(df_fa[df_fa['Pos'] == pos].sort_values(by="Points", ascending=False).head(10))
+
+else:
+    # TEAM REPORT CARD
+    st.header(f"Report Card: {selection}")
+    selected_roster = next((r for r in rosters if user_map.get(r['owner_id'], {}).get('name') == selection), None)
+    if selected_roster:
+        team_data = []
+        for pid in (selected_roster['players'] or []):
+            p = players.get(pid, {})
+            score = actual_stats.get(pid, {}).get('pts_ppr', 0)
+            team_data.append({"Pos": p.get('position', '??'), "Player": p.get('full_name') or f"{p.get('team', 'UNK')} DEF", "Points": score, "Grade": get_letter_grade(score, p.get('position', '??'))})
+        
+        df_team = pd.DataFrame(team_data).sort_values(by="Points", ascending=False)
+        avg_score = df_team['Points'].mean() if not df_team.empty else 0
+        gpa = round((avg_score / 14) * 4.0, 2)
+        st.metric("Weekly GPA", f"{min(gpa, 4.0)} / 4.0")
+        st.table(df_team)
