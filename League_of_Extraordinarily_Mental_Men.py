@@ -7,6 +7,17 @@ from datetime import datetime
 LEAGUE_ID = "1239058549716303872"
 st.set_page_config(page_title="League of Extraordinarily Mental Men", page_icon="🏈", layout="wide")
 
+# --- GRADING LOGIC ---
+def get_letter_grade(points):
+    """Converts points into a letter grade based on a 25pt scale."""
+    pct = (points / 25) * 100
+    if pct >= 90: return "A+"
+    if pct >= 80: return "A"
+    if pct >= 70: return "B"
+    if pct >= 60: return "C"
+    if pct >= 50: return "D"
+    return "F"
+
 # --- INITIALIZE TIMESTAMP ---
 if 'last_update' not in st.session_state:
     st.session_state.last_update = datetime.now().strftime("%B %d, %I:%M %p")
@@ -20,7 +31,6 @@ def fetch_all_data():
     projections = requests.get(f"https://api.sleeper.app/v1/stats/nfl/regular/2025/{week}").json()
     users = requests.get(f"https://api.sleeper.app/v1/league/{LEAGUE_ID}/users").json()
     
-    # Create a clean map of user data
     user_data_map = {}
     for u in users:
         uid = u['user_id']
@@ -43,7 +53,6 @@ players, rosters, projections, week, user_data_map, rostered_ids = fetch_all_dat
 st.caption(f"Last Updated: {st.session_state.last_update}")
 
 # --- SIDEBAR ---
-# Generate a list of team names for the dropdown
 team_names_list = []
 for r in rosters:
     name = user_data_map.get(r['owner_id'], {}).get('name', f"Team {r['roster_id']}")
@@ -73,7 +82,8 @@ if selection == "🔥 HOT OR NOT":
                     "Player": p_info.get('full_name', "Unknown Player"),
                     "Team": owner_info['name'],
                     "Pos": p_info.get('position', '??'),
-                    "Proj": proj
+                    "Proj": proj,
+                    "Grade": get_letter_grade(proj)
                 })
 
     df_trends = pd.DataFrame(all_rostered_stats)
@@ -83,12 +93,12 @@ if selection == "🔥 HOT OR NOT":
             st.subheader("🔥 Trending Up")
             top_5 = df_trends.sort_values(by="Proj", ascending=False).head(5)
             for _, row in top_5.iterrows():
-                st.success(f"**{row['Player']}**\n\n{row['Proj']} pts — {row['Team']}")
+                st.success(f"**{row['Player']}** — Grade: **{row['Grade']}**\n\n{row['Proj']} pts — {row['Team']}")
         with col2:
             st.subheader("❄️ Trending Down")
             bottom_5 = df_trends[df_trends['Proj'] > 5].sort_values(by="Proj", ascending=True).head(5)
             for _, row in bottom_5.iterrows():
-                st.error(f"**{row['Player']}**\n\n{row['Proj']} pts — {row['Team']}")
+                st.error(f"**{row['Player']}** — Grade: **{row['Grade']}**\n\n{row['Proj']} pts — {row['Team']}")
 
 elif selection == "FREE AGENTS":
     st.subheader("🔥 Best Available Free Agents")
@@ -100,7 +110,12 @@ elif selection == "FREE AGENTS":
             if pos in ['QB', 'RB', 'WR', 'TE', 'K', 'DEF']:
                 proj = projections.get(p_id, {}).get('pts_ppr', 0)
                 if proj > 1.0:
-                    fa_list.append({"Position": pos, "Player": p_info.get('full_name', p_id), "Proj": proj})
+                    fa_list.append({
+                        "Position": pos, 
+                        "Player": p_info.get('full_name', p_id), 
+                        "Proj": proj,
+                        "Grade": get_letter_grade(proj)
+                    })
     
     df_fa = pd.DataFrame(fa_list)
     for i, pos in enumerate(["QB", "RB", "WR", "TE", "K", "DEF"]):
@@ -110,13 +125,8 @@ elif selection == "FREE AGENTS":
 
 else:
     # TEAM VIEW
-    st.subheader(f"Analysis for: {selection}")
-    # Find the specific roster based on team name
-    selected_roster = None
-    for r in rosters:
-        if user_data_map.get(r['owner_id'], {}).get('name') == selection:
-            selected_roster = r
-            break
+    st.subheader(f"Report Card: {selection}")
+    selected_roster = next((r for r in rosters if user_data_map.get(r['owner_id'], {}).get('name') == selection), None)
     
     if selected_roster:
         avatar_id = user_data_map.get(selected_roster['owner_id'], {}).get('avatar')
@@ -130,6 +140,9 @@ else:
             team_data.append({
                 "Pos": p_info.get('position', '??'),
                 "Player": p_info.get('full_name', "Unknown"),
-                "Proj": proj
+                "Proj": proj,
+                "Grade": get_letter_grade(proj)
             })
+        
+        # Display as a table sorted by Projection
         st.table(pd.DataFrame(team_data).sort_values(by="Proj", ascending=False))
