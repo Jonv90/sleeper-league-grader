@@ -50,17 +50,45 @@ table_data = []
 # --- NEW SECTION: HOT OR NOT ---
 if selection == "🔥 HOT OR NOT":
     st.header("🔥 Hot or Not ❄️")
-    st.info(f"Analysis for NFL Week {week}")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("🔥 Trending Up")
-        st.success("**Player A**\n\nProjected: 22.4 (+5.2 vs Avg)")
-        st.success("**Player B**\n\nProjected: 19.8 (+4.1 vs Avg)")
-    with col2:
-        st.subheader("❄️ Trending Down")
-        st.error("**Player C**\n\nProjected: 11.2 (-6.5 vs Avg)")
-        st.error("**Player D**\n\nProjected: 9.8 (-5.1 vs Avg)")
+    st.info(f"Top and Bottom Projections for NFL Week {week}")
+
+    # Create a list of all rostered players with their projections
+    all_rostered_stats = []
+    for r in rosters:
+        owner_name = user_map.get(r['owner_id'], f"Team {r['roster_id']}")
+        for p_id in r['players']:
+            p_info = players.get(p_id, {})
+            proj = projections.get(p_id, {}).get('pts_ppr', 0)
+            if proj > 0:
+                all_rostered_stats.append({
+                    "Player": p_info.get('full_name'),
+                    "Team": owner_name,
+                    "Pos": p_info.get('position'),
+                    "Proj": proj
+                })
+
+    # Convert to Dataframe for easy sorting
+    df_trends = pd.DataFrame(all_rostered_stats)
+
+    if not df_trends.empty:
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("🔥 Trending Up")
+            st.write("Highest Projected Players this Week")
+            top_5 = df_trends.sort_values(by="Proj", ascending=False).head(5)
+            for _, row in top_5.iterrows():
+                st.success(f"**{row['Player']}** ({row['Pos']})\n\n{row['Proj']} pts — Owner: {row['Team']}")
+
+        with col2:
+            st.subheader("❄️ Trending Down")
+            st.write("Lowest Projected Starters (Risk)")
+            # Filtering for common starters (usually players projected over 5 pts but on the low end)
+            bottom_5 = df_trends[df_trends['Proj'] > 5].sort_values(by="Proj", ascending=True).head(5)
+            for _, row in bottom_5.iterrows():
+                st.error(f"**{row['Player']}** ({row['Pos']})\n\n{row['Proj']} pts — Owner: {row['Team']}")
+    else:
+        st.write("No rostered player data found to analyze.")
 
 elif selection == "FREE AGENTS":
     st.subheader("🔥 Best Available Free Agents")
