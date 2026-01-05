@@ -7,9 +7,23 @@ from datetime import datetime
 LEAGUE_ID = "1239058549716303872"
 st.set_page_config(page_title="League of Extraordinarily Mental Men", page_icon="🏈", layout="wide")
 
-# --- GRADING LOGIC ---
-def get_letter_grade(points):
-    pct = (points / 25) * 100
+# --- UPDATED GRADING LOGIC ---
+def get_letter_grade(points, pos):
+    """Grades players on a curve based on their position."""
+    # Set the '100%' mark differently for each position
+    ceilings = {
+        'QB': 25,
+        'RB': 20,
+        'WR': 20,
+        'TE': 18,
+        'K': 10,
+        'DEF': 10
+    }
+    
+    # Get the ceiling for the position, default to 20 if unknown
+    ceiling = ceilings.get(pos, 20)
+    pct = (points / ceiling) * 100
+    
     if pct >= 90: return "A+"
     if pct >= 80: return "A"
     if pct >= 70: return "B"
