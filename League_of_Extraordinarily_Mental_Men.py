@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 import pandas as pd
+from datetime import datetime
 
 # CONFIG
 LEAGUE_ID = "1239058549716303872"
@@ -27,6 +28,10 @@ def fetch_all_data():
 # UI ELEMENTS
 st.title("🏈 League of Extraordinarily Mental Men")
 players, rosters, projections, week, user_map, rostered_ids = fetch_all_data()
+
+# ADD THE TIMESTAMP
+now = datetime.now().strftime("%B %d, %I:%M %p")
+st.caption(f"Last Updated: {now} (Projections Refresh on Page Load)")
 
 # SIDEBAR: Add "FREE AGENTS" to the list
 team_names = [user_map.get(r['owner_id'], f"Team {r['roster_id']}") for r in rosters]
