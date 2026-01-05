@@ -4,7 +4,7 @@ import pandas as pd
 
 # CONFIG
 LEAGUE_ID = "1239058549716303872"
-st.set_page_config(page_title="Fantasy Grader", page_icon="🏈", layout="wide")
+st.set_page_config(page_title="League of Extraordinarily Mental Men", page_icon="🏈", layout="wide")
 
 @st.cache_data
 def fetch_all_data():
@@ -25,7 +25,7 @@ def fetch_all_data():
     return players, rosters, projections, week, user_map, rostered_ids
 
 # UI ELEMENTS
-st.title("🏈 Fantasy Football Grader")
+st.title("🏈 League of Extraordinarily Mental Men")
 players, rosters, projections, week, user_map, rostered_ids = fetch_all_data()
 
 # SIDEBAR: Add "FREE AGENTS" to the list
