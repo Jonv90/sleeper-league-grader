@@ -3,7 +3,7 @@ import requests
 import pandas as pd
 from datetime import datetime
 
-# CONFIG
+# CONFIG id
 LEAGUE_ID = "1239058549716303872"
 st.set_page_config(page_title="League of Extraordinarily Mental Men", page_icon="🏈", layout="wide")
 
