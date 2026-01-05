@@ -9,7 +9,6 @@ st.set_page_config(page_title="League of Extraordinarily Mental Men", page_icon=
 
 # --- GRADING LOGIC ---
 def get_letter_grade(points):
-    """Converts points into a letter grade based on a 25pt scale."""
     pct = (points / 25) * 100
     if pct >= 90: return "A+"
     if pct >= 80: return "A"
@@ -46,10 +45,10 @@ def fetch_all_data():
         
     return players, rosters, projections, week, user_data_map, rostered_ids
 
-# UI ELEMENTS
-st.title("🏈 League of Extraordinarily Mental Men")
 players, rosters, projections, week, user_data_map, rostered_ids = fetch_all_data()
 
+# UI
+st.title("🏈 League of Extraordinarily Mental Men")
 st.caption(f"Last Updated: {st.session_state.last_update}")
 
 # --- SIDEBAR ---
@@ -67,25 +66,26 @@ with st.sidebar:
         st.session_state.last_update = datetime.now().strftime("%B %d, %I:%M %p")
         st.rerun()
 
-# --- CONTENT SECTIONS ---
+# --- CONTENT ---
 
 if selection == "🔥 HOT OR NOT":
     st.header("🔥 Hot or Not ❄️")
     all_rostered_stats = []
     for r in rosters:
-        owner_info = user_data_map.get(r['owner_id'], {"name": "Unknown"})
+        owner_name = user_data_map.get(r['owner_id'], {}).get('name', "Unknown")
         for p_id in (r['players'] or []):
             p_info = players.get(p_id, {})
+            # FIX: Check for Defense name
+            p_name = p_info.get('full_name') or f"{p_info.get('team', 'UNK')} DEF"
             proj = projections.get(p_id, {}).get('pts_ppr', 0)
             if proj > 0:
                 all_rostered_stats.append({
-                    "Player": p_info.get('full_name', "Unknown Player"),
-                    "Team": owner_info['name'],
+                    "Player": p_name,
+                    "Team": owner_name,
                     "Pos": p_info.get('position', '??'),
                     "Proj": proj,
                     "Grade": get_letter_grade(proj)
                 })
-
     df_trends = pd.DataFrame(all_rostered_stats)
     if not df_trends.empty:
         col1, col2 = st.columns(2)
@@ -93,12 +93,12 @@ if selection == "🔥 HOT OR NOT":
             st.subheader("🔥 Trending Up")
             top_5 = df_trends.sort_values(by="Proj", ascending=False).head(5)
             for _, row in top_5.iterrows():
-                st.success(f"**{row['Player']}** — Grade: **{row['Grade']}**\n\n{row['Proj']} pts — {row['Team']}")
+                st.success(f"**{row['Player']}** — Grade: **{row['Grade']}**\n\n{row['Proj']} pts ({row['Team']})")
         with col2:
             st.subheader("❄️ Trending Down")
             bottom_5 = df_trends[df_trends['Proj'] > 5].sort_values(by="Proj", ascending=True).head(5)
             for _, row in bottom_5.iterrows():
-                st.error(f"**{row['Player']}** — Grade: **{row['Grade']}**\n\n{row['Proj']} pts — {row['Team']}")
+                st.error(f"**{row['Player']}** — Grade: **{row['Grade']}**\n\n{row['Proj']} pts ({row['Team']})")
 
 elif selection == "FREE AGENTS":
     st.subheader("🔥 Best Available Free Agents")
@@ -110,13 +110,8 @@ elif selection == "FREE AGENTS":
             if pos in ['QB', 'RB', 'WR', 'TE', 'K', 'DEF']:
                 proj = projections.get(p_id, {}).get('pts_ppr', 0)
                 if proj > 1.0:
-                    fa_list.append({
-                        "Position": pos, 
-                        "Player": p_info.get('full_name', p_id), 
-                        "Proj": proj,
-                        "Grade": get_letter_grade(proj)
-                    })
-    
+                    p_name = p_info.get('full_name') or f"{p_info.get('team', 'UNK')} DEF"
+                    fa_list.append({"Position": pos, "Player": p_name, "Proj": proj, "Grade": get_letter_grade(proj)})
     df_fa = pd.DataFrame(fa_list)
     for i, pos in enumerate(["QB", "RB", "WR", "TE", "K", "DEF"]):
         with tabs[i]:
@@ -124,25 +119,34 @@ elif selection == "FREE AGENTS":
             st.table(pos_df)
 
 else:
-    # TEAM VIEW
+    # TEAM VIEW / REPORT CARD
     st.subheader(f"Report Card: {selection}")
     selected_roster = next((r for r in rosters if user_data_map.get(r['owner_id'], {}).get('name') == selection), None)
     
     if selected_roster:
-        avatar_id = user_data_map.get(selected_roster['owner_id'], {}).get('avatar')
-        if avatar_id:
-            st.image(f"https://sleepercdn.com/avatars/thumbs/{avatar_id}", width=80)
+        col_avatar, col_gpa = st.columns([1, 3])
         
         team_data = []
         for p_id in (selected_roster['players'] or []):
             p_info = players.get(p_id, {})
+            p_name = p_info.get('full_name') or f"{p_info.get('team', 'UNK')} DEF"
             proj = projections.get(p_id, {}).get('pts_ppr', 0)
             team_data.append({
                 "Pos": p_info.get('position', '??'),
-                "Player": p_info.get('full_name', "Unknown"),
+                "Player": p_name,
                 "Proj": proj,
                 "Grade": get_letter_grade(proj)
             })
         
-        # Display as a table sorted by Projection
+        # Calculate GPA
+        avg_proj = sum(p['Proj'] for p in team_data) / len(team_data) if team_data else 0
+        gpa = round((avg_proj / 25) * 4.0, 2)
+
+        with col_avatar:
+            avatar_id = user_data_map.get(selected_roster['owner_id'], {}).get('avatar')
+            if avatar_id:
+                st.image(f"https://sleepercdn.com/avatars/thumbs/{avatar_id}", width=100)
+        with col_gpa:
+            st.metric(label="Weekly Team GPA", value=f"{gpa} / 4.0")
+
         st.table(pd.DataFrame(team_data).sort_values(by="Proj", ascending=False))
